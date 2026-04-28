@@ -1,6 +1,7 @@
 ﻿using APBD_TASK6.DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
+using APBD_TASK6.Validation;
 
 namespace APBD_TASK6.Controllers
 {
@@ -9,6 +10,7 @@ namespace APBD_TASK6.Controllers
     public class AppointmentsController : ControllerBase
     {
         private readonly string _connectionString;
+        private readonly IValidator _validator;
 
         public AppointmentsController(IConfiguration configuration)
         {
@@ -148,6 +150,60 @@ namespace APBD_TASK6.Controllers
 
             }
             return NotFound(new ErrorResponseDTO("Appointment not found"));
+        }
+        
+        [HttpPut("{id:int}")]
+        public async Task<IActionResult> UpdateAppointment(int id,
+            [FromBody] UpdateAppointmentRequestDTO request)
+        {
+            var validation = await _validator.ValidateUpdateAsync(id, request);
+            if (!validation.IsSuccess)
+            {
+                return StatusCode(validation.StatusCode, new ErrorResponseDTO(validation.ErrorMessage));
+            }
+
+            const string sql = """
+                               UPDATE dbo.Appointments
+                               SET IdPatient = @IdPatient,
+                                   IdDoctor = @IdDoctor,
+                                   AppointmentDate = @AppointmentDate,
+                                   Status = @Status,
+                                   Reason = @Reason,
+                                   InternalNotes = @InternalNotes
+                               WHERE IdAppointment = @IdAppointment
+                               """;
+            await using var connection = new SqlConnection(_connectionString);
+            await using var command = new SqlCommand(sql, connection);
+            
+            command.Parameters.AddWithValue("@IdPatient", request.IdPatient);
+            command.Parameters.AddWithValue("@IdDoctor", request.IdDoctor);
+            command.Parameters.AddWithValue("@AppointmentDate", request.AppointmentDate);
+            command.Parameters.AddWithValue("@Status", request.Status);
+            command.Parameters.AddWithValue("@Reason", request.Reason);
+            command.Parameters.AddWithValue("@IdAppointment", id);
+            
+            command.Parameters.AddWithValue("@InternalNotes", (object?) request.InternalNotes ?? DBNull.Value);
+            await connection.OpenAsync();
+            await command.ExecuteNonQueryAsync();
+            return Ok();
+        }
+        
+        [HttpDelete("{id:int}")]
+        public async Task<IActionResult> DeleteAppointment(int id)
+        {
+            var validation = await _validator.ValidateDeleteAsync(id);
+            if (!validation.IsSuccess)
+                return StatusCode(validation.StatusCode, new ErrorResponseDTO(validation.ErrorMessage));
+            const string sql = """
+                               DELETE FROM dbo.Appointments
+                               WHERE IdAppointment = @Id
+                               """;
+            await using var connection = new SqlConnection(_connectionString);
+            await using var command = new SqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@Id", id);
+            await connection.OpenAsync();
+            await command.ExecuteNonQueryAsync();
+            return NoContent();
         }
     }
 }
