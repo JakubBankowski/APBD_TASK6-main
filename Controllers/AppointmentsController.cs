@@ -85,7 +85,7 @@ namespace APBD_TASK6.Controllers
                 command.Parameters.AddWithValue("@IdPatient", request.IdPatient);
                 command.Parameters.AddWithValue("@IdDoctor", request.IdDoctor);
                 command.Parameters.AddWithValue("@AppointmentDate", request.AppointmentDate);
-                command.Parameters.AddWithValue("@Reason", request.Status);
+                command.Parameters.AddWithValue("@Reason", request.Reason);
                 
                 newId = (int)(await command.ExecuteNonQueryAsync());
                 
@@ -93,6 +93,61 @@ namespace APBD_TASK6.Controllers
                 
             }
             return CreatedAtAction(nameof(GetAppointments), new {id = newId}, null);
+        }
+
+        [HttpGet("{id:int}")]
+        public async Task<IActionResult> GetAppointmentById(int id)
+        {
+            const string sql = """
+                               SELECT 
+                                   a.IdAppointment,
+                                   a.AppointmentDate,
+                                   a.Status,
+                                   a.Reason,
+                                   a.InternalNotes,
+                                   a.CreatedAt,
+                                   p.FirstName + N' ' + p.LastName AS PatientFullName,
+                                   p.Email AS PatientEmail,
+                                   p.PhoneNumber AS PatientPhoneNumber,
+                                   d.FirstName + N' ' + d.LastName AS DoctorFullName,
+                                   d.LicenseNumber AS DoctorLicenseNumber,
+                                   s.Name AS SpecializationName
+                               FROM dbo.Appointments a
+                               JOIN dbo.Patients p ON p.IdPatient = a.IdPatient
+                               JOIN dbo.Doctors d ON d.IdDoctor = a.IdDoctor
+                               JOIN dbo.Specializations s ON d.IdSpecialization = s.IdSpecialization
+                               WHERE a.IdAppointment = @IdAppointment
+                               """;
+            await using var connection = new SqlConnection(_connectionString);
+            await using var command = new SqlCommand(sql, connection);
+
+            command.Parameters.AddWithValue("@IdAppoinment", id);
+            
+            await connection.OpenAsync();
+            AppointmentListDTODetailed result = null;
+            await using var reader = await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                result = new AppointmentListDTODetailed()
+                {
+                    IdAppointment = reader.GetInt32(0),
+                    AppointmentDate = reader.GetDateTime(1),
+                    Status = reader.GetString(2),
+                    Reason = reader.GetString(3),
+                    InternalNotes = reader.IsDBNull(4) ? null : reader.GetString(4),
+                    CreatedAt = reader.GetDateTime(5),
+                    PatientFullName = reader.GetString(6),
+                    PatientEmail = reader.GetString(7),
+                    PatientPhoneNumber = reader.GetString(8),
+                    DoctorFullName = reader.GetString(9),
+                    DoctorLicenseNumber = reader.GetString(10),
+                    SpecializationName = reader.GetString(11)
+                };
+
+                return Ok(result);
+
+            }
+            return NotFound(new ErrorResponseDTO("Appointment not found"));
         }
     }
 }
